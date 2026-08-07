@@ -608,6 +608,76 @@
     ctx.restore();
   }
 
+  function drawTrackBuffer(s, { postH, baseHalfW, legTopX, legT, barHalfW, barR }) {
+    const barY = -postH;
+
+    const drawLeg = (sign) => {
+      const bOuter = sign * (baseHalfW + legT / 2);
+      const bInner = sign * (baseHalfW - legT / 2);
+      const tOuter = sign * (legTopX + legT / 2);
+      const tInner = sign * (legTopX - legT / 2);
+      const grad = ctx.createLinearGradient(bOuter, 0, bInner, 0);
+      grad.addColorStop(0, sign < 0 ? "#8a6142" : "#c99a72");
+      grad.addColorStop(1, sign < 0 ? "#c99a72" : "#8a6142");
+      ctx.beginPath();
+      ctx.moveTo(bOuter, 0);
+      ctx.lineTo(bInner, 0);
+      ctx.lineTo(tInner, -postH);
+      ctx.lineTo(tOuter, -postH);
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
+      ctx.strokeStyle = "rgba(0,0,0,0.3)";
+      ctx.lineWidth = 1.2 * s;
+      ctx.stroke();
+    };
+    drawLeg(-1);
+    drawLeg(1);
+
+    // base skid plate on the rails
+    ctx.fillStyle = "#5c5c66";
+    roundRect(-baseHalfW - legT, -6 * s, (baseHalfW + legT) * 2, 9 * s, 3 * s);
+    ctx.fill();
+
+    // yellow/black striped pipe, clipped to its rounded shape
+    const bx = -barHalfW, by = barY - barR;
+    ctx.save();
+    roundRect(bx, by, barHalfW * 2, barR * 2, barR);
+    ctx.clip();
+    ctx.fillStyle = "#181818";
+    ctx.fillRect(bx, by, barHalfW * 2, barR * 2);
+    ctx.fillStyle = "#ffcf1f";
+    const stripeW = 12 * s;
+    for (let sx = -barR * 2; sx < barHalfW * 2 + barR * 2; sx += stripeW * 2) {
+      ctx.beginPath();
+      ctx.moveTo(bx + sx, by + barR * 2);
+      ctx.lineTo(bx + sx + barR * 2, by);
+      ctx.lineTo(bx + sx + barR * 2 + stripeW, by);
+      ctx.lineTo(bx + sx + stripeW, by + barR * 2);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    ctx.fillRect(bx, by, barHalfW * 2, barR * 0.6);
+    ctx.fillStyle = "rgba(0,0,0,0.2)";
+    ctx.fillRect(bx, by + barR * 1.5, barHalfW * 2, barR * 0.5);
+    ctx.restore();
+
+    // dark pipe-end caps, like looking into a hollow tube
+    for (const ex of [bx, bx + barHalfW * 2]) {
+      const grad = ctx.createRadialGradient(ex, barY - barR * 0.3, 1 * s, ex, barY, barR);
+      grad.addColorStop(0, "#5a6672");
+      grad.addColorStop(1, "#1c2126");
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(ex, barY, barR * 0.82, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.25)";
+      ctx.lineWidth = 1.2 * s;
+      ctx.stroke();
+    }
+  }
+
   function drawObstacle(o) {
     const t = 1 - o.z;
     if (t < 0 || t > 1.02) return;
@@ -631,96 +701,11 @@
     ctx.translate(x, y);
 
     if (o.type === "low") {
-      const w = 92 * s, h = 46 * s;
-      const grad = ctx.createLinearGradient(0, -h, 0, 0);
-      grad.addColorStop(0, "#ffcf4d");
-      grad.addColorStop(1, "#d99a00");
-      ctx.fillStyle = grad;
-      roundRect(-w / 2, -h, w, h, 6 * s);
-      ctx.fill();
-      ctx.strokeStyle = "rgba(0,0,0,0.3)";
-      ctx.lineWidth = 3 * s;
-      for (let i = -1; i <= 1; i++) {
-        ctx.beginPath();
-        ctx.moveTo(i * w * 0.3, -h);
-        ctx.lineTo(i * w * 0.3 + 8 * s, 0);
-        ctx.stroke();
-      }
+      // same track-buffer barrier as "high", just squat enough to jump over
+      drawTrackBuffer(s, { postH: 34 * s, baseHalfW: 48 * s, legTopX: 34 * s, legT: 11 * s, barHalfW: 40 * s, barR: 12 * s });
     } else if (o.type === "high") {
-      // track-buffer style barrier: angled wood legs holding a striped pipe
-      const postH = 92 * s;
-      const baseHalfW = 46 * s;
-      const legTopX = 24 * s;
-      const legT = 11 * s;
-      const barHalfW = 38 * s;
-      const barR = 12 * s;
-      const barY = -postH;
-
-      const drawLeg = (sign) => {
-        const bOuter = sign * (baseHalfW + legT / 2);
-        const bInner = sign * (baseHalfW - legT / 2);
-        const tOuter = sign * (legTopX + legT / 2);
-        const tInner = sign * (legTopX - legT / 2);
-        const grad = ctx.createLinearGradient(bOuter, 0, bInner, 0);
-        grad.addColorStop(0, sign < 0 ? "#8a6142" : "#c99a72");
-        grad.addColorStop(1, sign < 0 ? "#c99a72" : "#8a6142");
-        ctx.beginPath();
-        ctx.moveTo(bOuter, 0);
-        ctx.lineTo(bInner, 0);
-        ctx.lineTo(tInner, -postH);
-        ctx.lineTo(tOuter, -postH);
-        ctx.closePath();
-        ctx.fillStyle = grad;
-        ctx.fill();
-        ctx.strokeStyle = "rgba(0,0,0,0.3)";
-        ctx.lineWidth = 1.2 * s;
-        ctx.stroke();
-      };
-      drawLeg(-1);
-      drawLeg(1);
-
-      // base skid plate on the rails
-      ctx.fillStyle = "#5c5c66";
-      roundRect(-baseHalfW - legT, -6 * s, (baseHalfW + legT) * 2, 9 * s, 3 * s);
-      ctx.fill();
-
-      // yellow/black striped pipe, clipped to its rounded shape
-      const bx = -barHalfW, by = barY - barR;
-      ctx.save();
-      roundRect(bx, by, barHalfW * 2, barR * 2, barR);
-      ctx.clip();
-      ctx.fillStyle = "#181818";
-      ctx.fillRect(bx, by, barHalfW * 2, barR * 2);
-      ctx.fillStyle = "#ffcf1f";
-      const stripeW = 12 * s;
-      for (let sx = -barR * 2; sx < barHalfW * 2 + barR * 2; sx += stripeW * 2) {
-        ctx.beginPath();
-        ctx.moveTo(bx + sx, by + barR * 2);
-        ctx.lineTo(bx + sx + barR * 2, by);
-        ctx.lineTo(bx + sx + barR * 2 + stripeW, by);
-        ctx.lineTo(bx + sx + stripeW, by + barR * 2);
-        ctx.closePath();
-        ctx.fill();
-      }
-      ctx.fillStyle = "rgba(255,255,255,0.35)";
-      ctx.fillRect(bx, by, barHalfW * 2, barR * 0.6);
-      ctx.fillStyle = "rgba(0,0,0,0.2)";
-      ctx.fillRect(bx, by + barR * 1.5, barHalfW * 2, barR * 0.5);
-      ctx.restore();
-
-      // dark pipe-end caps, like looking into a hollow tube
-      for (const ex of [bx, bx + barHalfW * 2]) {
-        const grad = ctx.createRadialGradient(ex, barY - barR * 0.3, 1 * s, ex, barY, barR);
-        grad.addColorStop(0, "#5a6672");
-        grad.addColorStop(1, "#1c2126");
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(ex, barY, barR * 0.82, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = "rgba(255,255,255,0.25)";
-        ctx.lineWidth = 1.2 * s;
-        ctx.stroke();
-      }
+      // taller version of the same barrier, sized to duck under
+      drawTrackBuffer(s, { postH: 92 * s, baseHalfW: 46 * s, legTopX: 24 * s, legT: 11 * s, barHalfW: 38 * s, barR: 12 * s });
     }
 
     ctx.restore();
