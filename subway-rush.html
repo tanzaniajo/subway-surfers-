@@ -887,20 +887,59 @@ html, body {
         ctx.stroke();
       }
     } else if (o.type === "high") {
-      const w = 110 * s, barH = 20 * s, postH = 130 * s;
-      ctx.fillStyle = "#8a94a6";
-      ctx.fillRect(-6 * s, -postH, 12 * s, postH);
-      ctx.fillRect(w / 2 - 6 * s, -postH, 12 * s, postH);
-      const grad = ctx.createLinearGradient(0, -postH, 0, -postH + barH);
-      grad.addColorStop(0, "#ff5252");
-      grad.addColorStop(1, "#b71c1c");
-      ctx.fillStyle = grad;
-      roundRect(-w / 2, -postH, w, barH, 4 * s);
-      ctx.fill();
-      ctx.fillStyle = "#fff";
-      ctx.font = `${12 * s}px sans-serif`;
+      const w = 110 * s, barH = 22 * s, postH = 130 * s;
+
+      // metal side posts with a highlight edge
+      ctx.fillStyle = "#6b7280";
+      ctx.fillRect(-7 * s, -postH, 13 * s, postH);
+      ctx.fillRect(w / 2 - 6 * s, -postH, 13 * s, postH);
+      ctx.fillStyle = "rgba(255,255,255,0.3)";
+      ctx.fillRect(-7 * s, -postH, 3 * s, postH);
+      ctx.fillRect(w / 2 - 6 * s, -postH, 3 * s, postH);
+
+      // black/yellow hazard-stripe crossbar, clipped to its rounded shape
+      const bx = -w / 2, by = -postH;
+      ctx.save();
+      roundRect(bx, by, w, barH, 5 * s);
+      ctx.clip();
+      ctx.fillStyle = "#181818";
+      ctx.fillRect(bx, by, w, barH);
+      ctx.fillStyle = "#ffcf1f";
+      const stripeW = 13 * s;
+      for (let sx = -barH; sx < w + barH; sx += stripeW * 2) {
+        ctx.beginPath();
+        ctx.moveTo(bx + sx, by + barH);
+        ctx.lineTo(bx + sx + barH, by);
+        ctx.lineTo(bx + sx + barH + stripeW, by);
+        ctx.lineTo(bx + sx + stripeW, by + barH);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+      ctx.strokeStyle = "rgba(0,0,0,0.45)";
+      ctx.lineWidth = 2 * s;
+      roundRect(bx, by, w, barH, 5 * s);
+      ctx.stroke();
+
+      // hanging warning sign to sell "duck under"
+      const signY = -postH + barH + 22 * s;
+      ctx.fillStyle = "#3a3a3a";
+      ctx.fillRect(-1.5 * s, -postH + barH, 3 * s, 22 * s);
+      ctx.save();
+      ctx.translate(0, signY);
+      ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = "#ffcf1f";
+      ctx.fillRect(-11 * s, -11 * s, 22 * s, 22 * s);
+      ctx.strokeStyle = "rgba(0,0,0,0.4)";
+      ctx.lineWidth = 2 * s;
+      ctx.strokeRect(-11 * s, -11 * s, 22 * s, 22 * s);
+      ctx.restore();
+      ctx.fillStyle = "#181818";
+      ctx.font = `800 ${14 * s}px sans-serif`;
       ctx.textAlign = "center";
-      ctx.fillText("LOW", 0, -postH + barH * 0.8);
+      ctx.textBaseline = "middle";
+      ctx.fillText("!", 0, signY);
+      ctx.textBaseline = "alphabetic";
     }
 
     ctx.restore();
