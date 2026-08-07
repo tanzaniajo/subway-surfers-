@@ -216,7 +216,8 @@ html, body {
       <div class="howto">
         <div><span class="key">&larr; &rarr;</span> or swipe &nbsp;switch lanes</div>
         <div><span class="key">&uarr;</span> or swipe up &nbsp;jump</div>
-        <div><span class="key">&darr;</span> or swipe down &nbsp;slide</div>
+        <div><span class="key">&darr;</span> or swipe down &nbsp;slide / fast-fall</div>
+        <div>jump onto a <span class="key" style="color:#5fd6e6;border-color:#5fd6e6;">teal</span> train to ride its roof</div>
       </div>
       <button id="startBtn" class="btn">TAP TO PLAY</button>
     </div>
@@ -259,15 +260,23 @@ html, body {
     baseSpeed: 0.42,        // z-units per second at start
     maxSpeed: 1.25,
     speedRampPerSec: 0.006, // how fast speed ramps up
-    jumpDuration: 0.52,
-    jumpHeight: 150,
+    jumpHeight: 150,        // apex height in px
+    jumpApexTime: 0.26,     // time in seconds to reach apex (natural, no fast-fall)
+    fastFallMultiplier: 3.4,// extra gravity applied once fast-fall is triggered
     slideDuration: 0.5,
     laneLerp: 10,           // how snappy lane switching is
     spawnIntervalBase: 1.05,
     spawnIntervalMin: 0.62,
     hitWindowNear: 0.05,
     hitWindowFar: 0.12,
+    trainClimbLenZ: 0.34,   // how much of the "track" a climbable train's roof covers
+    roofHeight: 150,        // height player rides at while on top of a train
   };
+
+  // v0 and gravity derived so a normal (non-fast-fall) jump reaches
+  // CFG.jumpHeight at CFG.jumpApexTime, matching the old canned arc's feel.
+  const GRAVITY = (CFG.jumpHeight * 2) / (CFG.jumpApexTime * CFG.jumpApexTime);
+  const JUMP_V0 = GRAVITY * CFG.jumpApexTime;
 
   const scoreEl = document.getElementById("score");
   const bestValEl = document.getElementById("bestVal");
@@ -315,6 +324,9 @@ html, body {
     coin: () => { beep(880, 0.08, "sine", 0.05); beep(1320, 0.09, "sine", 0.05, 0.05); },
     crash: () => { beep(140, 0.3, "sawtooth", 0.08); beep(80, 0.4, "sawtooth", 0.07, 0.05); },
     switch: () => beep(360, 0.06, "square", 0.03),
+    fastFall: () => beep(180, 0.09, "square", 0.06),
+    climb: () => { beep(440, 0.07, "square", 0.05); beep(660, 0.09, "square", 0.05, 0.06); },
+    dismount: () => beep(300, 0.08, "square", 0.04),
   };
 
   // ---------- Helpers ----------
@@ -338,7 +350,7 @@ html, body {
   // ---------- Game State ----------
   let state = "start"; // start | playing | gameover
   let player, obstacles, coins, particles;
-  let speed, elapsed, score, spawnTimer, distanceScore;
+  let speed, elapsed, score, spawnTimer, distanceScore, bonusScore;
   let lastTime = 0;
   let shake = 0;
 
@@ -347,9 +359,15 @@ html, body {
       lane: 1,
       targetLane: 1,
       x: LANE_X_BOTTOM[1],
-      mode: "run", // run | jump | slide
+      mode: "run",   // run | jump | slide
+      layer: "ground", // ground | top (riding a train roof)
       timer: 0,
       animT: 0,
+      jumpLift: 0,
+      velocityY: 0,
+      fastFalling: false,
+      rideLane: null,
+      rideTimer: 0,
     };
     obstacles = [];
     coins = [];
@@ -358,31 +376,57 @@ html, body {
     elapsed = 0;
     score = 0;
     distanceScore = 0;
+    bonusScore = 0;
     spawnTimer = 0.6;
     shake = 0;
+  }
+
+  function dismountRoof() {
+    // hop off a train roof: keep it airborne so low obstacles are still dodged
+    // on the way down, reusing the normal jump gravity to fall naturally.
+    player.layer = "ground";
+    player.mode = "jump";
+    player.jumpLift = CFG.roofHeight;
+    player.velocityY = 0;
+    player.fastFalling = false;
+    player.rideLane = null;
+    sfx.dismount();
   }
 
   // ---------- Input ----------
   function tryJump() {
     if (state !== "playing") return;
+    if (player.layer === "top") return; // already up on a roof
     if (player.mode === "run") {
       player.mode = "jump";
       player.timer = 0;
+      player.velocityY = JUMP_V0;
+      player.jumpLift = 0;
+      player.fastFalling = false;
       sfx.jump();
     }
   }
   function trySlide() {
     if (state !== "playing") return;
+    if (player.layer === "top") return; // running on a roof, nothing to slide under
     if (player.mode === "run") {
       player.mode = "slide";
       player.timer = 0;
       sfx.slide();
+    } else if (player.mode === "jump" && !player.fastFalling) {
+      // pressed down mid-air: cancel any remaining rise and slam down early
+      player.fastFalling = true;
+      if (player.velocityY > 0) player.velocityY = 0;
+      sfx.fastFall();
     }
   }
   function moveLane(dir) {
     if (state !== "playing") return;
     const nl = clamp(player.targetLane + dir, 0, 2);
     if (nl !== player.targetLane) {
+      if (player.layer === "top" && nl !== player.rideLane) {
+        dismountRoof(); // bail off the side of the train early
+      }
       player.targetLane = nl;
       sfx.switch();
     }
@@ -481,7 +525,9 @@ html, body {
     const lanes = [0, 1, 2];
     const roll = Math.random();
 
-    if (roll < 0.55) {
+    if (roll < 0.18) {
+      spawnClimbableTrainWave();
+    } else if (roll < 0.66) {
       // 1-2 obstacle lanes, rest coins/open
       const blockedCount = Math.random() < 0.35 ? 2 : 1;
       const shuffled = lanes.slice().sort(() => Math.random() - 0.5);
@@ -509,6 +555,19 @@ html, body {
     }
   }
 
+  function spawnClimbableTrainWave() {
+    // a special train with a boardable roof: jump onto it as it arrives to
+    // ride its roof instead of switching lanes to dodge it
+    const lane = Math.floor(Math.random() * 3);
+    obstacles.push({ lane, type: "train", climbable: true, z: 1, resolved: false });
+
+    const openLanes = [0, 1, 2].filter((l) => l !== lane);
+    if (Math.random() < 0.6) {
+      const coinLane = openLanes[Math.floor(Math.random() * openLanes.length)];
+      spawnCoinLine(coinLane, 1, 4 + Math.floor(Math.random() * 3));
+    }
+  }
+
   function spawnCoinLine(lane, startZ, count) {
     const step = 0.045;
     for (let i = 0; i < count; i++) {
@@ -527,11 +586,21 @@ html, body {
     player.lane = player.targetLane;
     player.animT += dt * (8 + speed * 6);
 
-    if (player.mode === "jump") {
-      player.timer += dt;
-      if (player.timer >= CFG.jumpDuration) {
+    if (player.layer === "top") {
+      // riding a train roof: hold at a fixed elevation until the roof runs out
+      player.rideTimer -= dt;
+      if (player.rideTimer <= 0) {
+        dismountRoof();
+      }
+    } else if (player.mode === "jump") {
+      const g = GRAVITY * (player.fastFalling ? CFG.fastFallMultiplier : 1);
+      player.velocityY -= g * dt;
+      player.jumpLift += player.velocityY * dt;
+      if (player.jumpLift <= 0) {
+        player.jumpLift = 0;
+        player.velocityY = 0;
+        player.fastFalling = false;
         player.mode = "run";
-        player.timer = 0;
       }
     } else if (player.mode === "slide") {
       player.timer += dt;
@@ -554,10 +623,22 @@ html, body {
       const o = obstacles[i];
       o.z -= speed * dt;
 
-      if (!o.resolved && o.z <= 0.16 && o.z >= 0.03 && o.lane === player.lane) {
+      if (!o.resolved && o.z <= 0.16 && o.z >= 0.03 && o.lane === player.lane && player.layer !== "top") {
         let hit = false;
         if (o.type === "train") {
-          hit = true;
+          if (o.climbable && player.mode === "jump") {
+            player.layer = "top";
+            player.mode = "run";
+            player.jumpLift = 0;
+            player.velocityY = 0;
+            player.fastFalling = false;
+            player.rideLane = o.lane;
+            player.rideTimer = CFG.trainClimbLenZ / Math.max(speed, 0.15);
+            bonusScore += 20;
+            sfx.climb();
+          } else {
+            hit = true;
+          }
         } else if (o.type === "low") {
           hit = player.mode !== "jump";
         } else if (o.type === "high") {
@@ -598,7 +679,7 @@ html, body {
     }
 
     distanceScore += speed * dt * 18;
-    score = Math.floor(distanceScore + coinTotal());
+    score = Math.floor(distanceScore + coinTotal() + bonusScore);
     scoreEl.textContent = score;
 
     if (shake > 0) shake = Math.max(0, shake - dt * 3);
@@ -631,7 +712,7 @@ html, body {
     state = "gameover";
     shake = 1;
     sfx.crash();
-    const finalScore = Math.floor(distanceScore + coinTotal());
+    const finalScore = Math.floor(distanceScore + coinTotal() + bonusScore);
     finalScoreEl.textContent = finalScore;
     if (finalScore > highScore) {
       highScore = finalScore;
@@ -717,9 +798,71 @@ html, body {
     ctx.globalAlpha = 1;
   }
 
+  function drawTrainCar(lane, t, climbable, isFront) {
+    if (t < 0 || t > 1.02) return;
+    const y = yAt(t);
+    const x = laneXAt(lane, t);
+    const s = scaleAt(t);
+
+    ctx.save();
+    ctx.translate(x, y);
+
+    const w = 96 * s, h = 190 * s;
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(-w / 2, -6 * s, w, 10 * s);
+
+    const grad = ctx.createLinearGradient(0, -h, 0, 0);
+    if (climbable) {
+      grad.addColorStop(0, "#3fc6d9");
+      grad.addColorStop(1, "#146678");
+    } else {
+      grad.addColorStop(0, "#e0453f");
+      grad.addColorStop(1, "#9c1f1a");
+    }
+    ctx.fillStyle = grad;
+    roundRect(-w / 2, -h, w, h, 10 * s);
+    ctx.fill();
+
+    ctx.fillStyle = "#cfe8ff";
+    const winW = w * 0.7, winH = h * 0.22;
+    roundRect(-winW / 2, -h * 0.82, winW, winH, 4 * s);
+    ctx.fill();
+
+    ctx.fillStyle = climbable ? "#c8f9ff" : "#ffd23f";
+    ctx.fillRect(-w * 0.4, -h * 0.15, w * 0.8, 8 * s);
+
+    if (climbable) {
+      // roof walkway strip hints that the top is a path
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.fillRect(-w * 0.42, -h - 4 * s, w * 0.84, 4 * s);
+    }
+
+    if (climbable && isFront) {
+      // jump-here marker above the front car
+      ctx.fillStyle = "#ffd23f";
+      ctx.font = `700 ${16 * s}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.fillText("↑", 0, -h - 14 * s);
+    }
+
+    ctx.restore();
+  }
+
   function drawObstacle(o) {
     const t = 1 - o.z;
     if (t < 0 || t > 1.02) return;
+
+    if (o.type === "train") {
+      if (o.climbable) {
+        drawTrainCar(o.lane, t - 0.12, true, false);
+        drawTrainCar(o.lane, t - 0.06, true, false);
+        drawTrainCar(o.lane, t, true, true);
+      } else {
+        drawTrainCar(o.lane, t, false, false);
+      }
+      return;
+    }
+
     const y = yAt(t);
     const x = laneXAt(o.lane, t);
     const s = scaleAt(t);
@@ -727,26 +870,7 @@ html, body {
     ctx.save();
     ctx.translate(x, y);
 
-    if (o.type === "train") {
-      const w = 96 * s, h = 190 * s;
-      ctx.fillStyle = "rgba(0,0,0,0.35)";
-      ctx.fillRect(-w / 2, -6 * s, w, 10 * s);
-
-      const grad = ctx.createLinearGradient(0, -h, 0, 0);
-      grad.addColorStop(0, "#e0453f");
-      grad.addColorStop(1, "#9c1f1a");
-      ctx.fillStyle = grad;
-      roundRect(-w / 2, -h, w, h, 10 * s);
-      ctx.fill();
-
-      ctx.fillStyle = "#cfe8ff";
-      const winW = w * 0.7, winH = h * 0.22;
-      roundRect(-winW / 2, -h * 0.82, winW, winH, 4 * s);
-      ctx.fill();
-
-      ctx.fillStyle = "#ffd23f";
-      ctx.fillRect(-w * 0.4, -h * 0.15, w * 0.8, 8 * s);
-    } else if (o.type === "low") {
+    if (o.type === "low") {
       const w = 92 * s, h = 46 * s;
       const grad = ctx.createLinearGradient(0, -h, 0, 0);
       grad.addColorStop(0, "#ffcf4d");
@@ -825,9 +949,10 @@ html, body {
     let squash = 1;
     let jumpLift = 0;
 
-    if (player.mode === "jump") {
-      const p = player.timer / CFG.jumpDuration;
-      jumpLift = Math.sin(Math.PI * p) * CFG.jumpHeight;
+    if (player.layer === "top") {
+      jumpLift = CFG.roofHeight;
+    } else if (player.mode === "jump") {
+      jumpLift = player.jumpLift;
     } else if (player.mode === "slide") {
       squash = 0.55;
     }
@@ -918,6 +1043,35 @@ html, body {
     ctx.restore();
   }
 
+  function drawRoofRide() {
+    // a moving platform under the player's feet while they ride a train roof
+    const x = player.x;
+    const y = PLAYER_BASE_Y - CFG.roofHeight;
+    const w = 100;
+
+    ctx.save();
+    ctx.translate(x, y + 14);
+    const grad = ctx.createLinearGradient(0, -6, 0, 10);
+    grad.addColorStop(0, "#5fd6e6");
+    grad.addColorStop(1, "#1f7c8c");
+    ctx.fillStyle = grad;
+    roundRect(-w / 2, -6, w, 16, 6);
+    ctx.fill();
+
+    // scrolling rivet marks for a sense of motion
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    const off = (elapsed * speed * 6) % 20;
+    for (let i = -2; i <= 2; i++) {
+      const rx = i * 20 - off;
+      if (rx > -w / 2 && rx < w / 2) {
+        ctx.beginPath();
+        ctx.arc(rx, 2, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
   function roundRect(x, y, w, h, r) {
     ctx.beginPath();
     ctx.moveTo(x + r, y);
@@ -944,6 +1098,7 @@ html, body {
     for (const c of sortedCoins) drawCoin(c);
     for (const o of sortedObstacles) drawObstacle(o);
 
+    if (player.layer === "top") drawRoofRide();
     drawPlayer();
     drawParticles();
 
