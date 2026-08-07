@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Subway Rush</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="stage">
+    <canvas id="game" width="480" height="800"></canvas>
+
+    <div id="hud">
+      <div id="score">0</div>
+      <div id="best">BEST <span id="bestVal">0</span></div>
+    </div>
+
+    <div id="startScreen" class="overlay">
+      <h1>SUBWAY <span>RUSH</span></h1>
+      <p class="tagline">Dash the tracks. Dodge the trains. Grab the coins.</p>
+      <div class="howto">
+        <div><span class="key">&larr; &rarr;</span> or swipe &nbsp;switch lanes</div>
+        <div><span class="key">&uarr;</span> or swipe up &nbsp;jump</div>
+        <div><span class="key">&darr;</span> or swipe down &nbsp;slide</div>
+      </div>
+      <button id="startBtn" class="btn">TAP TO PLAY</button>
+    </div>
+
+    <div id="gameOverScreen" class="overlay hidden">
+      <h2>BUSTED!</h2>
+      <p>Score: <span id="finalScore">0</span></p>
+      <p id="newBestMsg" class="hidden">New Best!</p>
+      <button id="restartBtn" class="btn">PLAY AGAIN</button>
+    </div>
+
+    <div id="touchControls">
+      <button id="btnLeft" class="ctrlBtn" aria-label="Move left">&larr;</button>
+      <button id="btnJump" class="ctrlBtn tall" aria-label="Jump">&uarr;</button>
+      <button id="btnSlide" class="ctrlBtn tall" aria-label="Slide">&darr;</button>
+      <button id="btnRight" class="ctrlBtn" aria-label="Move right">&rarr;</button>
+    </div>
+  </div>
+
+  <script src="js/game.js"></script>
+</body>
+</html>
