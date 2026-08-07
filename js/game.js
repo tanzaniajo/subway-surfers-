@@ -647,26 +647,29 @@
         ctx.stroke();
       }
     } else if (o.type === "high") {
-      const w = 110 * s, barH = 22 * s, postH = 130 * s;
+      const w = 110 * s, barH = 24 * s, postH = 130 * s;
 
-      // metal side posts with a highlight edge
-      ctx.fillStyle = "#6b7280";
+      // light metal side posts
+      ctx.fillStyle = "#d8dbe0";
       ctx.fillRect(-7 * s, -postH, 13 * s, postH);
       ctx.fillRect(w / 2 - 6 * s, -postH, 13 * s, postH);
-      ctx.fillStyle = "rgba(255,255,255,0.3)";
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
       ctx.fillRect(-7 * s, -postH, 3 * s, postH);
       ctx.fillRect(w / 2 - 6 * s, -postH, 3 * s, postH);
+      ctx.fillStyle = "rgba(0,0,0,0.15)";
+      ctx.fillRect(2 * s, -postH, 3 * s, postH);
+      ctx.fillRect(w / 2 + 4 * s, -postH, 3 * s, postH);
 
-      // black/yellow hazard-stripe crossbar, clipped to its rounded shape
-      const bx = -w / 2, by = -postH;
+      // yellow/black hazard crossing-gate bar, clipped to its rounded shape
+      const barW = w - 6 * s, bx = -barW / 2, by = -postH - barH * 0.15;
       ctx.save();
-      roundRect(bx, by, w, barH, 5 * s);
+      roundRect(bx, by, barW, barH, barH / 2);
       ctx.clip();
       ctx.fillStyle = "#181818";
-      ctx.fillRect(bx, by, w, barH);
+      ctx.fillRect(bx, by, barW, barH);
       ctx.fillStyle = "#ffcf1f";
-      const stripeW = 13 * s;
-      for (let sx = -barH; sx < w + barH; sx += stripeW * 2) {
+      const stripeW = 16 * s;
+      for (let sx = -barH; sx < barW + barH; sx += stripeW * 2) {
         ctx.beginPath();
         ctx.moveTo(bx + sx, by + barH);
         ctx.lineTo(bx + sx + barH, by);
@@ -675,31 +678,25 @@
         ctx.closePath();
         ctx.fill();
       }
+      // cylindrical highlight/shadow to sell a round pipe
+      ctx.fillStyle = "rgba(255,255,255,0.45)";
+      ctx.fillRect(bx, by, barW, barH * 0.32);
+      ctx.fillStyle = "rgba(0,0,0,0.18)";
+      ctx.fillRect(bx, by + barH * 0.75, barW, barH * 0.25);
       ctx.restore();
-      ctx.strokeStyle = "rgba(0,0,0,0.45)";
-      ctx.lineWidth = 2 * s;
-      roundRect(bx, by, w, barH, 5 * s);
+      ctx.strokeStyle = "rgba(0,0,0,0.25)";
+      ctx.lineWidth = 1.5 * s;
+      roundRect(bx, by, barW, barH, barH / 2);
       ctx.stroke();
 
-      // hanging warning sign to sell "duck under"
-      const signY = -postH + barH + 22 * s;
-      ctx.fillStyle = "#3a3a3a";
-      ctx.fillRect(-1.5 * s, -postH + barH, 3 * s, 22 * s);
-      ctx.save();
-      ctx.translate(0, signY);
-      ctx.rotate(Math.PI / 4);
-      ctx.fillStyle = "#ffcf1f";
-      ctx.fillRect(-11 * s, -11 * s, 22 * s, 22 * s);
-      ctx.strokeStyle = "rgba(0,0,0,0.4)";
-      ctx.lineWidth = 2 * s;
-      ctx.strokeRect(-11 * s, -11 * s, 22 * s, 22 * s);
-      ctx.restore();
+      // black end caps, like a level-crossing arm
       ctx.fillStyle = "#181818";
-      ctx.font = `800 ${14 * s}px sans-serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText("!", 0, signY);
-      ctx.textBaseline = "alphabetic";
+      ctx.beginPath();
+      ctx.arc(bx, by + barH / 2, barH / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(bx + barW, by + barH / 2, barH / 2, 0, Math.PI * 2);
+      ctx.fill();
     }
 
     ctx.restore();
