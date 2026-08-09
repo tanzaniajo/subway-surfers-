@@ -31,6 +31,9 @@
     hitWindowFar: 0.12,
     trainClimbLenZ: 0.34,   // how much of the "track" a climbable train's roof covers
     roofHeight: 150,        // height player rides at while on top of a train
+    hoverboardDuration: 9,  // seconds of invincibility once picked up
+    hoverboardSpawnMin: 16, // seconds between hoverboard pickups
+    hoverboardSpawnMax: 26,
   };
 
   // v0 and gravity derived so a normal (non-fast-fall) jump reaches
@@ -87,6 +90,8 @@
     fastFall: () => beep(180, 0.09, "square", 0.06),
     climb: () => { beep(440, 0.07, "square", 0.05); beep(660, 0.09, "square", 0.05, 0.06); },
     dismount: () => beep(300, 0.08, "square", 0.04),
+    hoverOn: () => { beep(300, 0.08, "sawtooth", 0.05); beep(500, 0.08, "sawtooth", 0.05, 0.07); beep(760, 0.12, "sawtooth", 0.05, 0.14); },
+    hoverOff: () => { beep(500, 0.1, "sawtooth", 0.04); beep(260, 0.14, "sawtooth", 0.04, 0.08); },
   };
 
   // ---------- Helpers ----------
@@ -109,8 +114,8 @@
 
   // ---------- Game State ----------
   let state = "start"; // start | playing | gameover
-  let player, obstacles, coins, particles;
-  let speed, elapsed, score, spawnTimer, distanceScore, bonusScore;
+  let player, obstacles, coins, particles, powerups;
+  let speed, elapsed, score, spawnTimer, distanceScore, bonusScore, powerupTimer;
   let lastTime = 0;
   let shake = 0;
 
@@ -128,16 +133,20 @@
       fastFalling: false,
       rideLane: null,
       rideTimer: 0,
+      hoverboard: false,
+      hoverboardTimer: 0,
     };
     obstacles = [];
     coins = [];
     particles = [];
+    powerups = [];
     speed = CFG.baseSpeed;
     elapsed = 0;
     score = 0;
     distanceScore = 0;
     bonusScore = 0;
     spawnTimer = 0.6;
+    powerupTimer = CFG.hoverboardSpawnMin * 0.6;
     shake = 0;
   }
 
@@ -335,6 +344,11 @@
     }
   }
 
+  function spawnHoverboardPickup() {
+    const lane = Math.floor(Math.random() * 3);
+    powerups.push({ lane, type: "hoverboard", z: 1, collected: false });
+  }
+
   // ---------- Update ----------
   function update(dt) {
     elapsed += dt;
@@ -370,6 +384,14 @@
       }
     }
 
+    if (player.hoverboard) {
+      player.hoverboardTimer -= dt;
+      if (player.hoverboardTimer <= 0) {
+        player.hoverboard = false;
+        sfx.hoverOff();
+      }
+    }
+
     // spawn
     spawnTimer -= dt;
     if (spawnTimer <= 0) {
@@ -378,38 +400,51 @@
       spawnTimer = interval * (0.85 + Math.random() * 0.3);
     }
 
+    powerupTimer -= dt;
+    if (powerupTimer <= 0) {
+      spawnHoverboardPickup();
+      powerupTimer = CFG.hoverboardSpawnMin + Math.random() * (CFG.hoverboardSpawnMax - CFG.hoverboardSpawnMin);
+    }
+
     // obstacles
     for (let i = obstacles.length - 1; i >= 0; i--) {
       const o = obstacles[i];
       o.z -= speed * dt;
 
       if (!o.resolved && o.z <= 0.16 && o.z >= 0.03 && o.lane === player.lane && player.layer !== "top") {
-        let hit = false;
-        if (o.type === "train") {
-          if (o.climbable && player.mode === "jump") {
-            player.layer = "top";
-            player.mode = "run";
-            player.jumpLift = 0;
-            player.velocityY = 0;
-            player.fastFalling = false;
-            player.rideLane = o.lane;
-            player.rideTimer = CFG.trainClimbLenZ / Math.max(speed, 0.15);
-            bonusScore += 20;
-            sfx.climb();
-          } else {
-            hit = true;
-          }
-        } else if (o.type === "low") {
-          hit = player.mode !== "jump";
-        } else if (o.type === "high") {
-          hit = player.mode !== "slide";
-        }
-        if (hit) {
+        if (player.hoverboard) {
+          // plow straight through while invincible; consume it now so a
+          // hoverboard expiry mid-window can't retroactively turn this
+          // same obstacle into a fatal hit next frame
           o.resolved = true;
-          triggerGameOver();
-          return;
         } else {
-          o.resolved = true;
+          let hit = false;
+          if (o.type === "train") {
+            if (o.climbable && player.mode === "jump") {
+              player.layer = "top";
+              player.mode = "run";
+              player.jumpLift = 0;
+              player.velocityY = 0;
+              player.fastFalling = false;
+              player.rideLane = o.lane;
+              player.rideTimer = CFG.trainClimbLenZ / Math.max(speed, 0.15);
+              bonusScore += 20;
+              sfx.climb();
+            } else {
+              hit = true;
+            }
+          } else if (o.type === "low") {
+            hit = player.mode !== "jump";
+          } else if (o.type === "high") {
+            hit = player.mode !== "slide";
+          }
+          if (hit) {
+            o.resolved = true;
+            triggerGameOver();
+            return;
+          } else {
+            o.resolved = true;
+          }
         }
       }
 
@@ -426,6 +461,19 @@
         sfx.coin();
       }
       if (c.z < -0.05) coins.splice(i, 1);
+    }
+
+    // powerups
+    for (let i = powerups.length - 1; i >= 0; i--) {
+      const p = powerups[i];
+      p.z -= speed * dt;
+      if (!p.collected && p.z <= 0.14 && p.z >= 0.02 && p.lane === player.lane) {
+        p.collected = true;
+        player.hoverboard = true;
+        player.hoverboardTimer = CFG.hoverboardDuration;
+        sfx.hoverOn();
+      }
+      if (p.z < -0.05) powerups.splice(i, 1);
     }
 
     // particles
@@ -737,6 +785,49 @@
     ctx.restore();
   }
 
+  function drawHoverGlow(r) {
+    const glow = ctx.createRadialGradient(0, 0, r * 0.08, 0, 0, r);
+    glow.addColorStop(0, "rgba(120,220,255,0.55)");
+    glow.addColorStop(1, "rgba(120,220,255,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawHoverBoardShape(w, h) {
+    const grad = ctx.createLinearGradient(-w / 2, 0, w / 2, 0);
+    grad.addColorStop(0, "#2fd8e8");
+    grad.addColorStop(0.5, "#c8fbff");
+    grad.addColorStop(1, "#2fd8e8");
+    ctx.fillStyle = grad;
+    roundRect(-w / 2, -h / 2, w, h, h / 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.7)";
+    ctx.lineWidth = Math.max(1, h * 0.12);
+    roundRect(-w / 2, -h / 2, w, h, h / 2);
+    ctx.stroke();
+  }
+
+  function drawPowerup(p) {
+    if (p.collected) return;
+    const t = 1 - p.z;
+    if (t < 0 || t > 1.02) return;
+    const y = yAt(t) - 46 * scaleAt(t);
+    const x = laneXAt(p.lane, t);
+    const s = scaleAt(t);
+    const bob = Math.sin(elapsed * 4 + p.lane * 2) * 5 * s;
+    const spin = Math.sin(elapsed * 3 + p.lane);
+
+    ctx.save();
+    ctx.translate(x, y + bob);
+    drawHoverGlow(26 * s);
+    // hovering board, viewed edge-on with a slight tilt for a "floating" read
+    ctx.scale(1, 0.42 + spin * 0.08);
+    drawHoverBoardShape(34 * s, 12 * s);
+    ctx.restore();
+  }
+
   function drawParticles() {
     for (const p of particles) {
       ctx.globalAlpha = clamp(p.life / p.maxLife, 0, 1);
@@ -775,6 +866,15 @@
 
     ctx.save();
     ctx.translate(x, y);
+
+    if (player.hoverboard && player.layer !== "top") {
+      const hoverBob = Math.sin(elapsed * 14) * 3;
+      ctx.save();
+      ctx.translate(0, 28 + hoverBob);
+      drawHoverGlow(34);
+      drawHoverBoardShape(52, 12);
+      ctx.restore();
+    }
 
     const bodyH = 92 * squash;
     const legPhase = Math.sin(player.animT);
@@ -846,6 +946,26 @@
     ctx.fillRect(2, -bodyH - 16, 20, 6);
 
     ctx.restore();
+
+    if (player.hoverboard) {
+      // invincibility aura + shrinking timer bar above the head
+      ctx.save();
+      ctx.strokeStyle = `rgba(120,220,255,${0.35 + Math.sin(elapsed * 10) * 0.15})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.ellipse(x, y - bodyH * 0.55, 34, bodyH * 0.65, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+
+      const pct = clamp(player.hoverboardTimer / CFG.hoverboardDuration, 0, 1);
+      const barW = 44, barY = y - bodyH - 48;
+      ctx.fillStyle = "rgba(0,0,0,0.4)";
+      roundRect(x - barW / 2, barY, barW, 6, 3);
+      ctx.fill();
+      ctx.fillStyle = pct < 0.25 ? "#ff5252" : "#2fd8e8";
+      roundRect(x - barW / 2, barY, barW * pct, 6, 3);
+      ctx.fill();
+    }
   }
 
   function drawRoofRide() {
@@ -901,6 +1021,7 @@
     const sortedCoins = coins.slice().sort((a, b) => b.z - a.z);
 
     for (const c of sortedCoins) drawCoin(c);
+    for (const p of powerups) drawPowerup(p);
     for (const o of sortedObstacles) drawObstacle(o);
 
     if (player.layer === "top") drawRoofRide();
